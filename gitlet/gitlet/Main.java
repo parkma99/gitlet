@@ -49,15 +49,19 @@ public class Main {
                 Repository.find(args[1]);
                 break;
             case "checkout":
+                Repository.checkout(args);
                 break;
             case "branch":
                 validateNumArgs(args, 2);
+                Repository.branch(args[1]);
                 break;
             case "rm-branch":
                 validateNumArgs(args, 2);
+                Repository.removeBranch(args[1]);
                 break;
             case "reset":
                 validateNumArgs(args, 2);
+                Repository.reset(args[1]);
                 break;
             case "merge":
                 validateNumArgs(args, 2);

@@ -74,6 +74,10 @@ public class Commit implements Serializable {
         return blobs.containsKey(filePath);
     }
 
+    public String getBlobHash(String filePath) {
+        return blobs.get(filePath);
+    }
+
     public boolean isModified(String filePath, String blobHash) {
         return !blobs.get(filePath).equals(blobHash);
     }

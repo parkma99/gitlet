@@ -13,7 +13,6 @@ import static gitlet.Utils.*;
  */
 public class Repository {
     /**
-     * TODO: add instance variables here.
      *
      * List all instance variables of the Repository class here with a useful
      * comment above them describing what that variable represents and how that
@@ -50,8 +49,51 @@ public class Repository {
     }
 
     private static Commit getCommit(String branch) {
-        String hash = readContentsAsString(join(BRANCHES_DIR, branch));
-        return Commit.get(hash);
+        String hash = getBranchCommitHash(branch);
+        return getCommitFromHash(hash);
+    }
+
+    private static Commit getCommitFromHash(String hash) {
+        if (hash.length() == 40) {
+            return Commit.get(hash);
+        }
+        File commitPrefix = join(COMMITS_DIR, hash.substring(0, 2));
+        if (commitPrefix.exists()) {
+            List<String> commits = plainFilenamesIn(commitPrefix);
+            assert commits != null;
+            for (String commit : commits) {
+                if (commit.startsWith(hash.substring(2))) {
+                    return Commit.get(hash.substring(0, 2) + commit);
+                }
+            }
+        }
+        System.out.println("No commit with that id exists.");
+        System.exit(0);
+        return null;
+    }
+
+    private static String getBranchCommitHash(String branch) {
+        File file = join(BRANCHES_DIR, branch);
+        if (!file.exists()) {
+            System.out.println("No such branch exists.");
+            System.exit(0);
+        }
+        return readContentsAsString(file);
+    }
+
+    private static void updateHeadBranch(String branch) {
+        writeContents(HEAD_FILE, branch);
+    }
+
+    private static void checkUntrackedOverwritten(Map<String, String> snapShot, Map<String, String> newBlobs,
+                                                  Commit targetCommit) {
+        for (String fileName : snapShot.keySet()) {
+            if (!newBlobs.containsKey(fileName) && targetCommit.isTracked(fileName)) {
+                System.out.println("There is an untracked file in the way;" +
+                            " delete it, or add and commit it first.");
+                System.exit(0);
+            }
+        }
     }
 
     private static void updateHeadCommit(String hash) {
@@ -308,4 +350,118 @@ public class Repository {
         builder.append("\n");
         System.out.println(builder);
     }
+
+    public static void checkout(String... args) {
+        checkGitletDir();
+
+        if (args.length == 2) {
+            // checkout branch
+            checkoutBranch(args[1]);
+        } else if (args.length == 3 && args[1].equals("--")) {
+            // checkout  -- file
+            checkoutFile(args[2]);
+        } else if (args.length == 4 && args[2].equals("--")) {
+            // checkout commit -- file
+            checkoutFileFromCommit(args[1], args[3]);
+        } else {
+            System.out.println("Incorrect operands.");
+            System.exit(0);
+        }
+    }
+
+    private static byte[] getBlobContent(String hash) {
+        Blob blob = Blob.get(hash);
+        return blob.getContent();
+    }
+
+    private static void checkoutCommit(Commit target) {
+        Commit head = getHeadCommit();
+
+        Index changes = Index.get();
+        Map<String, String> newBlobs = getCurrentBlobs(head, changes);
+        Map<String, String> snapShot = getCurrentSnapShot();
+
+        checkUntrackedOverwritten(snapShot, newBlobs, target);
+
+        for (String fileName : snapShot.keySet()) {
+            if (head.isTracked(fileName) && !target.isTracked(fileName)) {
+                restrictedDelete(new File(fileName));
+            }
+        }
+
+        for (Map.Entry<String, String> entry : target.getBlobs().entrySet()) {
+            File file = new File(entry.getKey());
+            String blobHash = entry.getValue();
+            writeContents(file, getBlobContent(blobHash));
+        }
+
+        clearStageArea(changes);
+    }
+
+    private static void checkoutBranch(String branch) {
+        String curBranch = readContentsAsString(HEAD_FILE);
+        if (curBranch.equals(branch)) {
+            System.out.println("No need to checkout the current branch.");
+            System.exit(0);
+        }
+        Commit commit = getCommit(branch);
+        checkoutCommit(commit);
+        updateHeadBranch(branch);
+    }
+
+    private static void checkoutFile(String fileName){
+        Commit head = getHeadCommit();
+        checkoutFileFromCommit(head, fileName);
+    }
+
+    private static void checkoutFileFromCommit(String hash, String fileName){
+        Commit commit = getCommitFromHash(hash);
+        checkoutFileFromCommit(commit, fileName);
+    }
+
+    private static void checkoutFileFromCommit(Commit commit, String fileName) {
+        File file = join(CWD, fileName);
+        if (!commit.isTracked(file.getAbsolutePath())) {
+            System.out.println("File does not exist in that commit.");
+            System.exit(0);
+        }
+        String blobHash = commit.getBlobHash(file.getAbsolutePath());
+        writeContents(file, getBlobContent(blobHash));
+    }
+
+    public static void branch(String branch){
+        checkGitletDir();
+        File file = join(BRANCHES_DIR, branch);
+        if (file.exists()) {
+            System.out.println("A branch with that name already exists.");
+            System.exit(0);
+        }
+        String head = readContentsAsString(HEAD_FILE);
+        String commitHash = getBranchCommitHash(head);
+        writeContents(file, commitHash);
+    }
+
+    public static void removeBranch(String branch) {
+        checkGitletDir();
+        File file = join(BRANCHES_DIR, branch);
+        if (!file.exists()) {
+            System.out.println("A branch with that name does not exist.");
+            System.exit(0);
+        }
+        String head = readContentsAsString(HEAD_FILE);
+        if (head.equals(branch)) {
+            System.out.println("Cannot remove the current branch.");
+            System.exit(0);
+        }
+        file.delete();
+
+    }
+
+    public static void reset(String hash) {
+        checkGitletDir();
+        Commit commit = getCommitFromHash(hash);
+        checkoutCommit(commit);
+        updateHeadCommit(commit.getHash());
+    }
+
 }
